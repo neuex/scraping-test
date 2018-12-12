@@ -35,8 +35,8 @@ def fetch_item_data(url):
     return [id,item_name,distributor,release_date,dosage_form_classes, type_] + ingredient_list
 
 # CSV書き込み
-def write_csv(data):
-    with open(CSV_FILE_NAME, 'w') as f:
+def write_csv(data, add_mode=False):
+    with open(CSV_FILE_NAME, 'a' if add_mode else 'w') as f:
         writer = csv.writer(f, lineterminator='\n')
         writer.writerows(data)
 
@@ -68,8 +68,8 @@ for link_url in links:
     i+=1
 
     # TODO: 削除する
-    # if i == 10:
-    #     break
+    if i == 3:
+        break
 
 # CSVヘッダー生成
 ingredient_list_headers = list(map(lambda i:'全成分'+str(i+1), range(max_ingredient_list_size)))
