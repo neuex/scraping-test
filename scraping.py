@@ -1,69 +1,83 @@
 import urllib.request, urllib.error
 from time import sleep
 import csv
+import random
 from bs4 import BeautifulSoup
 
 BASE_URL = "https://www.cosmetic-info.jp"
-list_page_url = BASE_URL + "/prod/result.php?cq%5B0%5D=0&jcln%5B0%5D=&jcln%5B1%5D=&jcln%5B2%5D=&-f=saler&-d=a&-p=all"
+LIST_PAGE_URL = BASE_URL + "/prod/result.php?cq%5B0%5D=0&jcln%5B0%5D=&jcln%5B1%5D=&jcln%5B2%5D=&-f=saler&-d=a&-p=all"
+CSV_FILE_NAME = "scraping.csv"
 
-def scrape():
-    # 一覧ページから各商品ページへのリンク
-    root_html = urllib.request.urlopen(list_page_url + 'all')
-    print('load complete')
+# 一覧ページから各商品ページへのリンク取得
+def fetch_page_links():
+    root_html = urllib.request.urlopen(LIST_PAGE_URL)
     root = BeautifulSoup(root_html, 'lxml')
-    print('parse complete')
-    links = [link_elm.get('href') for link_elm in root.find(class_="listview").find('tbody').find_all('a')]
+    return [link_elm.get('href') for link_elm in root.find(class_="listview").find('tbody').find_all('a')]
 
-    item_count = len(links)
-    item_info_list = []
-    max_ingredient_list_size = 0 #ヘッダー用
-    i = 1 #進捗用
+# 商品ページから商品情報を取得
+def fetch_item_data(url):
+    detail_html = urllib.request.urlopen(BASE_URL + "/prod/" + url)
+    detail_root = BeautifulSoup(detail_html, 'lxml')
 
-    ## 各商品ページから商品情報を取得
-    for link_url in links:
-        detail_html = urllib.request.urlopen(BASE_URL + "/prod/" + link_url)
-        detail_root = BeautifulSoup(detail_html, 'lxml')
+    item_rows = detail_root.find(class_='formview').find_all('tr', recursive = False)
 
-        item_rows = detail_root.find(class_='formview').find_all('tr', recursive = False)
+    # 商品情報取得
+    id = url.split('=')[1]                                              # 0: id
+    item_name = item_rows[0].find('td').text                            # 1: 商品名
+    distributor = item_rows[1].find('td').find('a').text                # 2: 販売元
+    release_date = item_rows[2].find('td').find('a').text               # 3: 発売日
+    dosage_form_class_spans = item_rows[3].find('td').find_all('a')     
+    dosage_form_class_texts = [a.text for a in dosage_form_class_spans]
+    dosage_form_classes = " ".join(dosage_form_class_texts)             # 4: 剤型分類
+    type_ = item_rows[4].find('td').text                                # 5: 種別
+    ingredient_list = [a.text for a in item_rows[5].find('td').find('ol').find_all('a')] # 6-: 成分リスト
 
-        # 商品情報取得
-        id = link_url.split('=')[1]
-        item_name = item_rows[0].find('td').text
-        distributor = item_rows[1].find('td').find('a').text
-        release_date = item_rows[2].find('td').find('a').text
-        dosage_form_class_spans = item_rows[3].find('td').find_all('a')
-        dosage_form_class_texts = [a.text for a in dosage_form_class_spans]
-        dosage_form_classes = " ".join(dosage_form_class_texts)
-        type_ = item_rows[4].find('td').text
-        ingredient_list = [a.text for a in item_rows[5].find('td').find('ol').find_all('a')]
+    return [id,item_name,distributor,release_date,dosage_form_classes, type_] + ingredient_list
 
-        item_info = [id,item_name,distributor,release_date,dosage_form_classes, type_] + ingredient_list
+# CSV書き込み
+def write_csv(data):
+    with open(CSV_FILE_NAME, 'w') as f:
+        writer = csv.writer(f, lineterminator='\n')
+        writer.writerows(data)
 
-        # 成分リストのサイズ取得（ヘッダー用）
-        ingredient_list_size = len(ingredient_list)
-        max_ingredient_list_size = ingredient_list_size if max_ingredient_list_size < ingredient_list_size else max_ingredient_list_size
 
-        # 商品情報リストに追加
-        item_info_list.append(item_info)
+item_data_list = []
+max_ingredient_list_size = 0 # ヘッダー生成用
+i = 1 #進捗用
 
-        # 進捗出力
-        print(str(i) + '/' + str(item_count))
+print("件数取得開始")
 
-        # DoS攻撃防止のため1秒スリープ
-        sleep(1)
-        i+=1
+links = fetch_page_links()
+item_count = len(links)
 
-        if i == 3:
-            break
+print("対象商品数：{}件".format(item_count))
 
-    # CSVヘッダー生成
-    ingredient_list_headers = list(map(lambda i:'全成分'+str(i+1), range(max_ingredient_list_size)))
-    header_row = ['ID', '商品名', '発売元', '発売日', '剤型分類', '種類'] + ingredient_list_headers
-    item_info_list.insert(0,header_row)
+for link_url in links:
+    item_data = fetch_item_data(link_url)
+    item_data_list.append(item_data)
 
-    return item_info_list
+    # 成分リストのサイズ取得（ヘッダー用）
+    ingredient_list_size = len(item_data) - 6
+    max_ingredient_list_size = ingredient_list_size if max_ingredient_list_size < ingredient_list_size else max_ingredient_list_size
 
-csv_data = scrape()
-with open('scraping.csv', 'w') as f:
-    writer = csv.writer(f, lineterminator='\n')
-    writer.writerows(csv_data)
+    # 進捗出力
+    print(str(i) + '/' + str(item_count))
+    
+    # DoS攻撃防止のため1秒スリープ
+    sleep(random.uniform(0.8, 1.2))
+    i+=1
+
+    # TODO: 削除する
+    # if i == 10:
+    #     break
+
+# CSVヘッダー生成
+ingredient_list_headers = list(map(lambda i:'全成分'+str(i+1), range(max_ingredient_list_size)))
+header_row = ['ID', '商品名', '発売元', '発売日', '剤型分類', '種類'] + ingredient_list_headers
+item_data_list.insert(0,header_row)
+
+print("csv出力開始")
+write_csv(item_data_list)
+
+print("csv出力完了")
+input('キーを押して終了')
