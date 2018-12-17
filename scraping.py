@@ -114,7 +114,7 @@ header_row = ['ID', '商品名', '発売元', '発売日', '剤型分類', '種�
 
 logger.info("csvヘッダー出力開始")
 # ヘッダー出力
-with open(CSV_FILE_NAME, newline='') as f:
+with open(CSV_FILE_NAME, newline='', encoding='utf-8') as f:
     r = csv.reader(f)
     data = [line for line in r]
 with open(CSV_FILE_NAME,'w', newline='', encoding='utf-8') as f:
